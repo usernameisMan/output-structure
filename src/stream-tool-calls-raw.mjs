@@ -47,13 +47,13 @@ try {
 
   for await (const chunk of stream) {
     chunkIndex++;
-    
+    console.log(chunk);
     // 3. 【解析原始工具调用分片】
     // 在流式 tool calls 过程中，模型以增量片段输出工具调用的参数内容，
     // 我们可以在每个 chunk 的 tool_call_chunks 中找到这些片段。
     if (chunk.tool_call_chunks && chunk.tool_call_chunks.length > 0) {
       // 提取第 0 个工具调用的增量参数字符串 (通常是一段段局部的 JSON 文本) 并输出
-      process.stdout.write(chunk.tool_call_chunks[0].args || "");
+      // process.stdout.write(chunk.tool_call_chunks[0].args || "");
     }
   }
 

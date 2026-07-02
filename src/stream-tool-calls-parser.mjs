@@ -44,13 +44,16 @@ try {
   // 2. 开启流
   const stream = await chain.stream("详细介绍牛顿的生平和成就");
 
-  let lastContent = "";   // 记录上一轮已经输出的完整字符串
+  let lastContent = ""; // 记录上一轮已经输出的完整字符串
   let finalResult = null; // 存储最终解析成功的完整对象
 
   console.log("📡 实时输出流式内容 (输出已解析的 Partial JSON 差异分片):\n");
 
   for await (const chunk of stream) {
     // 3. 【消费解析出的 Tool Call 数据块】
+    console.log(`数据块------------ \n`);
+    console.log(chunk);
+    console.log(`数据块------------ \n`);
     // 这里的 chunk 通常是一个数组，包含当前已合并解析出来的工具调用列表
     if (chunk.length > 0) {
       const toolCall = chunk[0];
@@ -65,7 +68,7 @@ try {
       if (currentContent.length > lastContent.length) {
         const newText = currentContent.slice(lastContent.length);
         process.stdout.write(newText); // 实时输出新增片段到控制台
-        lastContent = currentContent;  // 更新上一轮的进度
+        lastContent = currentContent; // 更新上一轮的进度
       }
     }
   }

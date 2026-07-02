@@ -33,6 +33,7 @@
 ### 工具调用篇 (Tool Calling)
 *   [tool-calls-args.mjs](file:///Users/aaxis/Documents/code/agent/output-parser-test/src/tool-calls-args.mjs) **(原始 Tool Calls 提取)**：利用 API 的 `bindTools` 机制，直接从 `response.tool_calls[0].args` 读取已解析的 JS 对象。
 *   [with-structured-output.mjs](file:///Users/aaxis/Documents/code/agent/output-parser-test/src/with-structured-output.mjs) **(高阶封装调用)**：介绍 LangChain 官方的 `withStructuredOutput` 捷径，并展示如何使用 `jsonMode` 兼容国产大模型。
+*   [smart-import.mjs](file:///Users/aaxis/Documents/code/agent/output-parser-test/src/smart-import.mjs) **(实战：好友信息提取与批量入库)**：利用 `withStructuredOutput` 结合 `functionCalling` 模式抽取文本中多个人物的好友信息，并自动写入 MySQL 数据库。
 
 ### 进阶流式输出篇 (Streaming)
 *   [stream-normal.mjs](file:///Users/aaxis/Documents/code/agent/output-parser-test/src/stream-normal.mjs) **(基础流式传输)**：演示 `model.stream()`、`for await...of` 异步迭代器以及打字机实时输出效果。
@@ -45,7 +46,7 @@
 
 ## ⚠️ 国产模型 (Qwen / DeepSeek) 兼容踩坑与避坑指南
 
-在对接国产大模型（如通义千问 `qwen3.7-plus`、`deepseek-chat`）的 OpenAI 兼容接口时，请牢记以下三条黄金准则：
+在对接国产大模型（如通义千问 `qwen3.7-plus`、`deepseek-chat`）的 OpenAI 兼容接口时，请牢记以下四条黄金准则：
 
 ### 1. 强制启用 `jsonMode` 并补齐 Prompt
 国产模型大多不支持默认的 `json_schema` 格式参数。你必须显式指定 `method: "jsonMode"`：
@@ -65,3 +66,41 @@ const structuredModel = model.withStructuredOutput(schema, {
 *   API 限制在思考期间不能强行指定特定的工具（即不能设置 `tool_choice` 参数为特定的工具或 `required`）。
 *   此时如果使用 `method: "functionCalling"` 强行绑定工具，接口会报 400 错误。
 *   **解决方案**：遇到此问题时，请降级回方案一（`JsonOutputParser`）或方案二（`jsonMode` 并明示 Prompt）。
+
+### 4. 国产大模型（不支持 json_schema）下输出数组（Array）Schema 的三要素
+如果你使用国产大模型并且需要让 `withStructuredOutput` 稳定输出数组 Schema（例如 `z.array(schema)`），必须满足以下三个核心要素才能成功复刻 `smart-import` 这种 demo：
+1. **关闭思考模式 (Thinking)**：如果模型开启了思考模式，会导致 Tool Calling 报错。必须显式关闭思考模式（例如在配置 `ChatOpenAI` 初始化时，使用 `modelKwargs: { thinking: { type: "disabled" } }`）。
+2. **必须使用 `z.object` 包裹顶层**：因为 Tool/Function Calling 规范限制工具参数的顶层必须是 object，不能是 array。因此不能直接传 `z.array(...)`，必须包裹成对象结构，如：`z.object({ friends: z.array(friendSchema).describe("好友信息数组") })`。
+3. **设置 `method: "functionCalling"`**：显式指定为工具调用方式。
+
+**💻 核心代码示例：**
+
+```javascript
+// 1. 初始化模型时关闭思考模式
+const model = new ChatOpenAI({
+  modelName: process.env.MODEL_NAME,
+  apiKey: process.env.OPENAI_API_KEY,
+  configuration: { baseURL: process.env.OPENAI_BASE_URL },
+  modelKwargs: {
+    thinking: { type: "disabled" }, 
+  },
+});
+
+// 2. 使用 z.object 顶层包裹数组 Schema
+const friendsArraySchema = z.object({
+  friends: z.array(friendSchema).describe("好友信息数组"),
+});
+
+// 3. 显式指定为 functionCalling 模式
+const structuredModel = model.withStructuredOutput(friendsArraySchema, {
+  method: "functionCalling",
+});
+
+// 调用并提取结果
+const response = await structuredModel.invoke(prompt);
+const results = response.friends; // 获得干净的数组结果
+```
+
+> [!IMPORTANT]
+> **为什么要用 `functionCalling` 模式？**
+> 因为如果继续降级使用 `jsonMode`（即 JSON 字符串模式），API 接口无法事先获知具体的 Schema 字段结构。此时如果你不在 Prompt 中将期望的 key 英文名称在列表中描述清楚，大模型极其容易输出中文的 `"姓名": "张总"`、`"性别": "女"` 这种格式，进而导致本地 Zod 校验失败抛出 `OUTPUT_PARSING_FAILURE` 异常。而 `functionCalling` 模式会在 API 请求中带上 Schema 参数，让大模型在生成数据前就感知到格式，确保 100% 的准确率。
