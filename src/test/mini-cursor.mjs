@@ -16,11 +16,16 @@ import {
 import chalk from "chalk";
 
 const model = new ChatOpenAI({
-  modelName: "qwen-plus",
+  modelName: process.env.MODEL_NAME,
   apiKey: process.env.OPENAI_API_KEY,
   temperature: 0,
   configuration: {
     baseURL: process.env.OPENAI_BASE_URL,
+  },
+  modelKwargs: {
+    // 【国产模型避坑点 1】：使用 Tool/Function Calling 时，
+    // 很多推理/思考模型（如 DeepSeek R1）若开启思考模式，在指定工具调用时可能因 API 冲突报错，故在此显式关闭
+    thinking: { type: "disabled" },
   },
 });
 
@@ -86,6 +91,7 @@ async function runAgentWithTools(query, maxIterations = 30) {
       fullAIMessage = fullAIMessage ? fullAIMessage.concat(chunk) : chunk;
 
       let parsedTools = null;
+
       try {
         parsedTools = await toolParser.parseResult([
           { message: fullAIMessage },
@@ -95,6 +101,7 @@ async function runAgentWithTools(query, maxIterations = 30) {
       }
 
       if (parsedTools && parsedTools.length > 0) {
+        debugger;
         for (const toolCall of parsedTools) {
           if (toolCall.type === "write_file" && toolCall.args?.content) {
             const toolCallId =
